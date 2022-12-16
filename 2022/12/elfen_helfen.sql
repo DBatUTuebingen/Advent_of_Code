@@ -1,10 +1,8 @@
 -- definitions for puzzle input
 DROP TABLE IF EXISTS heightmap;
 DROP TABLE IF EXISTS input;
+DROP TABLE IF EXISTS distance_estimation;
 DROP SEQUENCE IF EXISTS serial;
-CREATE TABLE input (idx int, row text[]);
-CREATE TABLE heightmap (row int, col int, height char(1));
-CREATE TABLE distance_estimation(row int, col int, dist int);
 CREATE TEMP SEQUENCE serial minvalue 0 start 0;
 
 -- macro to treat 'S' as 'a' and 'E' as 'z'
@@ -15,89 +13,86 @@ CASE WHEN height = 'S' THEN ascii('a')
      ELSE ascii(height) END;
 
 -- read input
-INSERT INTO input
-SELECT ROW_NUMBER() OVER () AS idx, string_to_array(s, '') AS row
-FROM read_csv_auto('/Users/louisalambrecht/git/Advent_of_Code/2022/12/input-sample.txt') AS c(s);
-
+WITH RECURSIVE input(row, map) AS (
+     SELECT ROW_NUMBER() OVER () AS row, string_to_array(s, '') AS map
+     FROM read_csv_auto('/Users/louisalambrecht/git/Advent_of_Code/2022/12/input.txt') AS c(s)
+),
 -- parse input into desired format
 -- todo: find out whether unnest and sequence always produce the correct assignment
-INSERT INTO heightmap
-SELECT i.idx AS row
-     , nextval('serial') % (SELECT len(i.row) FROM input i LIMIT 1) + 1 AS col
-     , unnest(i.row) AS val
-  FROM input AS i;
-
--- heuristic for A*: combination of manhatten distance and height distance
-INSERT INTO distance_estimation
-SELECT h.row, h.col, GREATEST(ascii2('E') - ascii2(h.height), ABS(hm.row-h.row) + ABS(hm.col-h.col)) AS dist
-FROM heightmap AS h, heightmap AS hm
-WHERE hm.height = 'E';
-
--- Finding shortest path from 'S' to 'E' by moving up max. 1 level
-WITH RECURSIVE path_finding(row, col, height, dir, steps, dist_est, path) AS (
-    SELECT h.row, h.col, h.height, NULL::char(1), 0, e.dist, ARRAY[ARRAY[h.row, h.col]]
-    FROM heightmap AS h, distance_estimation AS e
-    WHERE height='S' AND h.row = e.row AND h.col = e.col
+heightmap(row, col, height) AS (
+     SELECT i.row AS row,
+            generate_subscripts(i.map, 1) AS a,
+            i.map[a] AS height
+     FROM input AS i
+),
+-- heuristik: Manhatten Distanz: sehr schlecht
+-- heuristik: 3D euklidische Distanz: schlecht
+-- heuristik: Manhatten Distanz + Höhenunterschied: Ok
+-- heuristik: Manhatten Distanz + Höhenunterschied + euklidische Distanz: gut
+heightmap_dist(row, col, height, dist) AS (
+     SELECT h.row, h.col, h.height, ascii2('E') - ascii2(h.height) + ABS(hm.row-h.row) + ABS(hm.col-h.col) + sqrt((ascii2('E') - ascii2(h.height))^2 + (hm.row-h.row)^2 + (hm.col-h.col)^2) AS dist
+     FROM heightmap AS h, heightmap AS hm
+     WHERE hm.height = 'E'
+),
+-- A*: Finding shortest path from 'S' to 'E' by moving up max. 1 level
+path_finding(level, row, col, height, steps, dist_est, path, explored, rank) AS (
+    SELECT 1, h.row, h.col, h.height, 0, h.dist, ARRAY[ARRAY[h.row, h.col]], false, 1
+    FROM heightmap_dist AS h
+    WHERE height='S'
 
     UNION ALL
 
-    -- todo: duckdb can't use more than UNION in recursive CTEs!1elf!!
-    SELECT h.row, h.col, h.height, '>'::char(1), p.steps + 1, e.dist, array_append(p.path, ARRAY[h.row, h.col])
-    FROM path_finding p, heightmap h, distance_estimation e
-    WHERE h.height IS NOT NULL AND NOT array_contains(p.path, ARRAY[h.row, h.col])
-    AND p.row = h.row AND h.row = e.row AND h.col = p.col + 1 AND h.col = e.col
+    SELECT p.level + 1, h.row, h.col, h.height,
+    p.steps + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END AS steps,
+    p.steps + h.dist + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END AS dist,
+    CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN p.path ELSE array_append(p.path, ARRAY[h.row, h.col]) END AS path,
+    CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN true ELSE false END AS explored,
+    CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN NULL
+         ELSE ROW_NUMBER() OVER (PARTITION BY CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN true ELSE false END
+                                 ORDER BY p.steps + h.dist + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END) END AS rank
+    FROM (VALUES (-1, 0), (1, 0), (0,1), (0,-1), (0,0)) AS d(row, col)
+    JOIN path_finding p ON true
+    JOIN heightmap_dist h ON p.row + d.row = h.row  AND p.col + d.col = h.col
+    WHERE h.height IS NOT NULL
+    AND (p.rank = 1 OR (d.row = 0 AND d.col = 0))
+    AND (NOT array_contains(p.path, ARRAY[h.row, h.col]) OR p.explored OR (d.row = 0 AND d.col = 0))
     AND ascii2(h.height) <= ascii2(p.height) + 1
     AND p.height <> 'E'
+    AND NOT EXISTS (SELECT 1 FROM path_finding p WHERE p.height = 'E')
 )
-SELECT * FROM path_finding;
+SELECT p.level, p.height, p.steps
+FROM path_finding AS p
+WHERE array_contains(p.path, (SELECT ARRAY[h.row, h.col] FROM heightmap h WHERE h.height = 'E'))
+AND p.steps = (SELECT MIN(p.steps)
+               FROM path_finding AS p
+               WHERE array_contains(p.path,
+                                   (SELECT ARRAY[h.row, h.col]
+                                    FROM heightmap h
+                                    WHERE h.height = 'E')));
 
+-- -- Breitensuche
+-- path_finding(level, row, col, height, steps, path) AS (
+--     SELECT 1, h.row, h.col, h.height, 0, ARRAY[ARRAY[h.row, h.col]]
+--     FROM heightmap_dist AS h
+--     WHERE height='S'
 
-
--- this is how it used to work in PostgreSQL :'(
 --     UNION ALL
---         -- go to the right >
---         SELECT h.row, h.col, h.height, '>'::char(1), p.steps + 1, e.dist, p.path || point(h.row, h.col) AS path
---         FROM path_findings p, heightmap h, distance_estimation e
---         WHERE h.height IS NOT NULL AND NOT ARRAY[point(h.row, h.col)] <@ p.path
---         AND p.row = h.row AND h.row = e.row AND h.col = p.col + 1 AND h.col = e.col
---         AND ascii2(h.height) <= ascii2(p.height) + 1
---         AND p.height <> 'E'
 
---         UNION ALL
-
---         -- go to the left <
---         SELECT h.row, h.col, h.height, '<'::char(1), p.steps + 1, e.dist, p.path || point(h.row, h.col) AS path
---         FROM path_findings p, heightmap h, distance_estimation e
---         WHERE h.height IS NOT NULL AND NOT ARRAY[point(h.row, h.col)] <@ p.path
---         AND p.row = h.row AND h.row = e.row AND h.col = p.col - 1 AND h.col = e.col
---         AND ascii2(h.height) <= ascii2(p.height) + 1
---         AND p.height <> 'E'
-
---         UNION ALL
-
---         -- go down v
---         SELECT h.row, h.col, h.height, 'v'::char(1), p.steps + 1, e.dist, p.path || point(h.row, h.col) AS path
---         FROM path_findings p, heightmap h, distance_estimation e
---         WHERE h.height IS NOT NULL AND NOT ARRAY[point(h.row, h.col)] <@ p.path
---         AND p.row + 1 = h.row AND h.row = e.row AND h.col = p.col AND h.col = e.col
---         AND ascii2(h.height) <= ascii2(p.height) + 1
---         AND p.height <> 'E'
-
---         UNION ALL
-
---         -- go up ^
---         SELECT h.row, h.col, h.height, '^'::char(1), p.steps + 1, e.dist, p.path || point(h.row, h.col) AS path
---         FROM path_findings p, heightmap h, distance_estimation e
---         WHERE h.height IS NOT NULL AND NOT ARRAY[point(h.row, h.col)] <@ p.path
---         AND p.row - 1 = h.row AND h.row = e.row AND h.col = p.col AND h.col = e.col
---         AND ascii2(h.height) <= ascii2(p.height) + 1
---         AND p.height <> 'E'
---     )
+--     SELECT p.level + 1, h.row, h.col, h.height, p.steps + 1, array_append(p.path, ARRAY[h.row, h.col])
+--     FROM (VALUES (-1, 0), (1, 0), (0,1), (0,-1)) AS d(row, col)
+--     JOIN path_finding p ON true
+--     JOIN heightmap_dist h ON p.row + d.row = h.row  AND p.col + d.col = h.col
+--     WHERE h.height IS NOT NULL
+--     AND NOT array_contains(p.path, ARRAY[h.row, h.col])
+--     AND ascii2(h.height) <= ascii2(p.height) + 1
+--     AND p.height <> 'E' AND NOT EXISTS (SELECT 1 FROM path_finding p WHERE p.height = 'E')
 -- )
--- SELECT p.*
+-- SELECT DISTINCT p.level, p.height, p.steps
 -- FROM path_finding AS p
--- WHERE (SELECT ARRAY[point(h.row, h.col)] FROM heightmap h WHERE h.height = 'E') <@ p.path
+-- WHERE array_contains(p.path, (SELECT ARRAY[h.row, h.col] FROM heightmap h WHERE h.height = 'E'))
 -- AND p.steps = (SELECT MIN(p.steps)
--- FROM path_finding AS p
--- WHERE (SELECT ARRAY[point(h.row, h.col)] FROM heightmap h WHERE h.height = 'E') <@ p.path);
-
+--                FROM path_finding AS p
+--                WHERE array_contains(p.path,
+--                                    (SELECT ARRAY[h.row, h.col]
+--                                     FROM heightmap h
+--                                     WHERE h.height = 'E')));
