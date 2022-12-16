@@ -34,41 +34,65 @@ heightmap_dist(row, col, height, dist) AS (
      FROM heightmap AS h, heightmap AS hm
      WHERE hm.height = 'E'
 ),
--- A*: Finding shortest path from 'S' to 'E' by moving up max. 1 level
-path_finding(level, row, col, height, steps, dist_est, path, explored, rank) AS (
-    SELECT 1, h.row, h.col, h.height, 0, h.dist, ARRAY[ARRAY[h.row, h.col]], false, 1
-    FROM heightmap_dist AS h
-    WHERE height='S'
+-- Denis' optimierte Breitensuche
+path_finding(row, col, height, steps, visited) AS (
+  SELECT h.row, h.col, h.height, 0, ARRAY[ARRAY[h.row, h.col]]
+  FROM heightmap AS h
+  WHERE height='S'
 
     UNION ALL
 
-    SELECT p.level + 1, h.row, h.col, h.height,
-    p.steps + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END AS steps,
-    p.steps + h.dist + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END AS dist,
-    CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN p.path ELSE array_append(p.path, ARRAY[h.row, h.col]) END AS path,
-    CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN true ELSE false END AS explored,
-    CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN NULL
-         ELSE ROW_NUMBER() OVER (PARTITION BY CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN true ELSE false END
-                                 ORDER BY p.steps + h.dist + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END) END AS rank
-    FROM (VALUES (-1, 0), (1, 0), (0,1), (0,-1), (0,0)) AS d(row, col)
-    JOIN path_finding p ON true
-    JOIN heightmap_dist h ON p.row + d.row = h.row  AND p.col + d.col = h.col
-    WHERE h.height IS NOT NULL
-    AND (p.rank = 1 OR (d.row = 0 AND d.col = 0))
-    AND (NOT array_contains(p.path, ARRAY[h.row, h.col]) OR p.explored OR (d.row = 0 AND d.col = 0))
-    AND ascii2(h.height) <= ascii2(p.height) + 1
-    AND p.height <> 'E'
-    AND NOT EXISTS (SELECT 1 FROM path_finding p WHERE p.height = 'E')
+  (WITH vis AS (SELECT DISTINCT unnest(visited) AS p FROM path_finding)
+  SELECT DISTINCT ON (h.row, h.col, h.height, p.steps) h.row, h.col, h.height, p.steps + 1, array_append(p.visited, ARRAY[h.row, h.col])
+  FROM   path_finding AS p, heightmap AS h
+  WHERE  h.height IS NOT NULL AND NOT array_contains(p.visited, ARRAY[h.row, h.col])
+  AND    (p.row = h.row AND h.col = p.col + 1
+  OR     p.row = h.row+1 AND h.col = p.col
+  OR     p.row = h.row-1 AND h.col = p.col
+  OR     p.row = h.row AND h.col = p.col -1)
+  AND    ascii2(h.height) <= ascii2(p.height) + 1
+  AND    p.height <> 'E'
+  AND    ARRAY[h.row,h.col] NOT IN (SELECT * FROM vis)
+  )
 )
-SELECT p.level, p.height, p.steps
-FROM path_finding AS p
-WHERE array_contains(p.path, (SELECT ARRAY[h.row, h.col] FROM heightmap h WHERE h.height = 'E'))
-AND p.steps = (SELECT MIN(p.steps)
-               FROM path_finding AS p
-               WHERE array_contains(p.path,
-                                   (SELECT ARRAY[h.row, h.col]
-                                    FROM heightmap h
-                                    WHERE h.height = 'E')));
+SELECT * FROM path_finding WHERE height = 'E'
+LIMIT 1;
+
+-- -- A*: Finding shortest path from 'S' to 'E' by moving up max. 1 level
+-- path_finding(level, row, col, height, steps, dist_est, path, explored, rank) AS (
+--     SELECT 1, h.row, h.col, h.height, 0, h.dist, ARRAY[ARRAY[h.row, h.col]], false, 1
+--     FROM heightmap_dist AS h
+--     WHERE height='S'
+
+--     UNION ALL
+
+--     SELECT p.level + 1, h.row, h.col, h.height,
+--     p.steps + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END AS steps,
+--     p.steps + h.dist + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END AS dist,
+--     CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN p.path ELSE array_append(p.path, ARRAY[h.row, h.col]) END AS path,
+--     CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN true ELSE false END AS explored,
+--     CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN NULL
+--          ELSE ROW_NUMBER() OVER (PARTITION BY CASE WHEN p.explored OR (p.rank = 1 AND d.row = 0 AND d.col = 0) THEN true ELSE false END
+--                                  ORDER BY p.steps + h.dist + CASE WHEN p.explored OR p.rank <> 1 OR (d.row = 0 AND d.col = 0) THEN 0 ELSE 1 END) END AS rank
+--     FROM (VALUES (-1, 0), (1, 0), (0,1), (0,-1), (0,0)) AS d(row, col)
+--     JOIN path_finding p ON true
+--     JOIN heightmap_dist h ON p.row + d.row = h.row  AND p.col + d.col = h.col
+--     WHERE h.height IS NOT NULL
+--     AND (p.rank = 1 OR (d.row = 0 AND d.col = 0))
+--     AND (NOT array_contains(p.path, ARRAY[h.row, h.col]) OR p.explored OR (d.row = 0 AND d.col = 0))
+--     AND ascii2(h.height) <= ascii2(p.height) + 1
+--     AND p.height <> 'E'
+--     AND NOT EXISTS (SELECT 1 FROM path_finding p WHERE p.height = 'E')
+-- )
+-- SELECT p.level, p.height, p.steps
+-- FROM path_finding AS p
+-- WHERE array_contains(p.path, (SELECT ARRAY[h.row, h.col] FROM heightmap h WHERE h.height = 'E'))
+-- AND p.steps = (SELECT MIN(p.steps)
+--                FROM path_finding AS p
+--                WHERE array_contains(p.path,
+--                                    (SELECT ARRAY[h.row, h.col]
+--                                     FROM heightmap h
+--                                     WHERE h.height = 'E')));
 
 -- -- Breitensuche
 -- path_finding(level, row, col, height, steps, path) AS (
