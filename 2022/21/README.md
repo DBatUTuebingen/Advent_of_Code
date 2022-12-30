@@ -4,16 +4,19 @@
 
 ### Part 1
 
+Most of the `CASE-WHEN`-statements can be avoided, once DuckDB 
+supports `UNION ALL` inside recursive queries.
+
 Usage:
 
 ~~~
 $ duckdb -no-stdin -init monkey-math.sql
 -- Loading resources from monkey-math.sql
-┌──────────────────────┐
-│        snafu         │
-│       varchar        │
-├──────────────────────┤
-│ 2=001=-2=--0212-22-2 │
-└──────────────────────┘
+┌─────────────────┐
+│ Day 21 (part 1) │
+│      int64      │
+├─────────────────┤
+│ 276156919469632 │
+└─────────────────┘
 ~~~
 
