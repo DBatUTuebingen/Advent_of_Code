@@ -76,8 +76,8 @@ CREATE TEMP TABLE eval (
   val       bigint NOT NULL 
 );
 
-DROP MACRO IF EXISTS eval;
-CREATE MACRO eval(root_id, subst_id, subst_val) AS TABLE
+DROP MACRO IF EXISTS eval_subst;
+CREATE MACRO eval_subst(root_id, subst_id, subst_val) AS TABLE
 WITH RECURSIVE 
 eval(screamer, kind, val) AS (
   SELECT m.id, m.kind, m.expr.val
@@ -122,8 +122,12 @@ eval(screamer, kind, val) AS (
 )
 SELECT DISTINCT * FROM eval;
 
+DROP MACRO IF EXISTS eval;
+CREATE MACRO eval(root_id) AS TABLE
+SELECT * FROM eval_subst(root_id, NULL, NULL);
+
 INSERT INTO eval
-SELECT * FROM eval((SELECT m.id FROM monkeys AS m WHERE m.kind = 'root'), NULL, NULL);
+SELECT * FROM eval((SELECT m.id FROM monkeys AS m WHERE m.kind = 'root'));
 
 -- Assumption: there is exactly one `root`
 SELECT e.val AS "Day 21 (part one)"
@@ -142,6 +146,7 @@ CREATE TEMP TABLE path_to_human (
   val       bigint NOT NULL
 );
 
+-- First: walk from `humn` to `root` to create a path
 INSERT INTO path_to_human
 WITH RECURSIVE 
 traverse(step, id, child) AS (
@@ -169,6 +174,7 @@ SELECT ROW_NUMBER() OVER (ORDER BY t.step DESC),
 FROM   traverse AS t JOIN monkeys AS m ON t.id = m.id
 WHERE  NOT t.child IS NULL;
 
+-- Then: solve for `humn` by walking along the path from `root` to `humn`
 CREATE TEMP TABLE solve AS 
 WITH RECURSIVE 
 solve(step,x) AS (
@@ -194,23 +200,24 @@ solve(step,x) AS (
             END 
         END
   FROM   solve         AS s JOIN 
-          path_to_human AS p ON p.step = s.step+1 JOIN 
-          monkeys       AS m ON p.monkey_id = m.id
+         path_to_human AS p ON p.step = s.step+1 JOIN 
+         monkeys       AS m ON p.monkey_id = m.id
 )
 TABLE solve;
 
 CREATE TEMP TABLE new_humn AS 
 SELECT m.id, s.x AS val
 FROM   solve   AS s,
-        monkeys AS m 
+       monkeys AS m 
 WHERE  m.kind = 'humn'
 ORDER BY s.step DESC 
 LIMIT 1;
 
+-- Finally: `eval()` again with the value of `humn` substituted to ensure equality below root
 SELECT nh.val AS "Day 21 (part two)"
 FROM   new_humn      AS nh,
        path_to_human AS ph,
-       eval(
+       eval_subst(
          (SELECT p.monkey_id FROM path_to_human AS p WHERE p.step = 2),
          (SELECT nh.id FROM new_humn AS nh),
          (SELECT nh.val FROM new_humn AS nh)

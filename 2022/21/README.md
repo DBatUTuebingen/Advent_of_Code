@@ -9,8 +9,11 @@ supports `UNION ALL` inside recursive queries.
 
 ### Part 2
 
-Another bug crept up, where `UNION`-columns cannot be updated,
-if table has a primary key.
+A bug (?) crept up, where `UNION`-columns cannot be updated, if table has 
+a primary key constraint.
+
+Default parameter for `MACRO` do not work correctly when passing 
+subqueries (bug?)
 
 Usage:
 
