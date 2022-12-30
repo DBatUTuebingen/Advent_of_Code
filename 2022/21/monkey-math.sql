@@ -4,7 +4,7 @@ CREATE TEMP TABLE raw ( i int PRIMARY KEY, line text NOT NULL );
 
 INSERT INTO raw
 SELECT ROW_NUMBER() OVER () AS i, line 
-FROM   read_csv_auto('simple.txt') AS _(line);
+FROM   read_csv_auto('input.txt') AS _(line);
 
 DROP TYPE IF EXISTS op;
 CREATE TYPE op AS ENUM ('+','-','*','/');
@@ -15,7 +15,7 @@ CREATE TYPE kind AS ENUM ('mnky', 'root', 'humn');
 CREATE TEMP TABLE input ( 
   id   int     PRIMARY KEY, 
   name char(4) NOT NULL UNIQUE,
-  expr union(val int, expr text[])
+  expr union(val bigint, expr text[])
 );
 
 INSERT INTO input
@@ -54,8 +54,8 @@ WHERE  i.expr.expr IS NOT NULL;
 -- Assumption: all monkeys either listen to two monkeys no one else listens to 
 -- (or are screamers which listen to no one)
 CREATE TEMP TABLE listeners (
-  screamer int PRIMARY KEY,
-  listener int
+  screamer int PRIMARY KEY REFERENCES monkeys(id),
+  listener int REFERENCES monkeys(id)
 );
 
 CREATE INDEX listener_idx ON listeners (listener);
@@ -76,8 +76,8 @@ CREATE TEMP TABLE eval (
   val       bigint NOT NULL 
 );
 
-
-INSERT INTO eval
+DROP MACRO IF EXISTS eval;
+CREATE MACRO eval(root_id, subst_id, subst_val) AS TABLE
 WITH RECURSIVE 
 eval(screamer, kind, val) AS (
   SELECT m.id, m.kind, m.expr.val
@@ -107,11 +107,11 @@ eval(screamer, kind, val) AS (
   FROM    (
     SELECT DISTINCT ON (m.id)
           m.id, m.kind, m.expr.expr.op, 
-          e_l.screamer, e_l.kind, e_l.val, 
-          e_r.screamer, e_r.kind, e_r.val
+          e_l.screamer, e_l.kind, CASE WHEN e_l.screamer = subst_id THEN subst_val ELSE e_l.val END, 
+          e_r.screamer, e_r.kind, CASE WHEN e_r.screamer = subst_id THEN subst_val ELSE e_r.val END
     FROM   listeners AS l1 LEFT JOIN eval AS e_l ON l1.screamer = e_l.screamer,
-          listeners AS l2 LEFT JOIN eval AS e_r ON l2.screamer = e_r.screamer JOIN 
-          monkeys   AS m                        ON l2.listener = m.id
+           listeners AS l2 LEFT JOIN eval AS e_r ON l2.screamer = e_r.screamer JOIN 
+           monkeys   AS m                        ON l2.listener = m.id
     WHERE  l1.listener = l2.listener
     AND    NOT (e_l.screamer IS NULL AND e_r.screamer iS NULL)
     AND    (   e_l.screamer IS NULL 
@@ -121,6 +121,9 @@ eval(screamer, kind, val) AS (
   WHERE   NOT EXISTS (SELECT 1 FROM eval AS e WHERE e.kind = 'root')
 )
 SELECT DISTINCT * FROM eval;
+
+INSERT INTO eval
+SELECT * FROM eval((SELECT m.id FROM monkeys AS m WHERE m.kind = 'root'), NULL, NULL);
 
 -- Assumption: there is exactly one `root`
 SELECT e.val AS "Day 21 (part 1)"
@@ -166,6 +169,7 @@ SELECT ROW_NUMBER() OVER (ORDER BY t.step DESC),
 FROM   traverse AS t JOIN monkeys AS m ON t.id = m.id
 WHERE  NOT t.child IS NULL;
 
+CREATE TEMP TABLE solve AS 
 WITH RECURSIVE 
 solve(step,x) AS (
   SELECT 1, p.val
@@ -173,27 +177,46 @@ solve(step,x) AS (
   WHERE  p.step = 1
     UNION ALL 
   SELECT s.step+1, 
-         CASE p.child 
-           WHEN 'left'  THEN 
-             CASE m.expr.expr.op
-               WHEN '+' THEN  s.x - p.val
-               WHEN '-' THEN  s.x - p.val
-               WHEN '*' THEN  s.x / p.val
-               WHEN '/' THEN  s.x * p.val
-             END 
-           WHEN 'right' THEN 
-             CASE m.expr.expr.op
-               WHEN '+' THEN  s.x - p.val
-               WHEN '-' THEN (s.x - p.val) * -1
-               WHEN '*' THEN  s.x / p.val
-               WHEN '/' THEN  p.val / s.x
-             END 
-         END
+        CASE p.child 
+          WHEN 'left'  THEN 
+            CASE m.expr.expr.op
+              WHEN '+' THEN  s.x - p.val
+              WHEN '-' THEN  s.x + p.val
+              WHEN '*' THEN  s.x / p.val
+              WHEN '/' THEN  s.x * p.val
+            END 
+          WHEN 'right' THEN 
+            CASE m.expr.expr.op
+              WHEN '+' THEN  s.x - p.val
+              WHEN '-' THEN (s.x - p.val) * -1
+              WHEN '*' THEN  s.x / p.val
+              WHEN '/' THEN  p.val / s.x
+            END 
+        END
   FROM   solve         AS s JOIN 
-         path_to_human AS p ON p.step = s.step+1 JOIN 
-         monkeys       AS m ON p.monkey_id = m.id
+          path_to_human AS p ON p.step = s.step+1 JOIN 
+          monkeys       AS m ON p.monkey_id = m.id
 )
-SELECT s.x
-FROM   solve AS s
+TABLE solve;
+
+CREATE TEMP TABLE new_humn AS 
+SELECT m.id, s.x AS val
+FROM   solve   AS s,
+        monkeys AS m 
+WHERE  m.kind = 'humn'
 ORDER BY s.step DESC 
 LIMIT 1;
+
+SELECT nh.id, nh.val, 
+       e.val  AS human_side,
+       ph.val AS other_side,
+       e.val = ph.val AS "equal?"
+FROM   new_humn      AS nh,
+       path_to_human AS ph,
+       eval(
+         (SELECT p.monkey_id FROM path_to_human AS p WHERE p.step = 2),
+         (SELECT nh.id FROM new_humn AS nh),
+         (SELECT nh.val FROM new_humn AS nh)
+       ) AS e
+WHERE  e.screamer = (SELECT p.monkey_id FROM path_to_human AS p WHERE p.step = 2) 
+AND    ph.step = 1;
