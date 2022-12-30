@@ -75,21 +75,7 @@ eval(screamer, kind, val) AS (
   SELECT m.id, m.kind, m.expr.val
   FROM   monkeys AS m 
   WHERE  NOT m.expr.val IS NULL
-    UNION ALL (
-  WITH next(id, kind, op, id_l, kind_l, val_l, id_r, kind_r, val_r) AS (
-    SELECT m.id, m.kind, m.expr.expr.op, 
-           e_l.screamer, e_l.kind, e_l.val, 
-           e_r.screamer, e_r.kind, e_r.val
-    FROM   listeners AS l1 LEFT JOIN eval AS e_l ON l1.screamer = e_l.screamer,
-           listeners AS l2 LEFT JOIN eval AS e_r ON l2.screamer = e_r.screamer JOIN 
-           monkeys   AS m                        ON l2.listener = m.id
-    WHERE  l1.listener = l2.listener
-    AND    NOT m.expr.expr IS NULL
-    AND    NOT (e_l.screamer IS NULL AND e_r.screamer iS NULL)
-    AND    (   e_l.screamer IS NULL 
-            OR e_r.screamer IS NULL 
-            OR m.expr.expr.l = e_l.screamer AND m.expr.expr.r = e_r.screamer )
-  )
+    UNION ALL 
   SELECT DISTINCT
          CASE 
            WHEN n.id_l IS NULL THEN n.id_r 
@@ -111,9 +97,22 @@ eval(screamer, kind, val) AS (
                   WHEN '/' THEN n.val_l / n.val_r
                 END  
           END
-  FROM    next AS n
+  FROM    (
+    SELECT m.id, m.kind, m.expr.expr.op, 
+           e_l.screamer, e_l.kind, e_l.val, 
+           e_r.screamer, e_r.kind, e_r.val
+    FROM   listeners AS l1 LEFT JOIN eval AS e_l ON l1.screamer = e_l.screamer,
+           listeners AS l2 LEFT JOIN eval AS e_r ON l2.screamer = e_r.screamer JOIN 
+           monkeys   AS m                        ON l2.listener = m.id
+    WHERE  l1.listener = l2.listener
+    AND    NOT m.expr.expr IS NULL
+    AND    NOT (e_l.screamer IS NULL AND e_r.screamer iS NULL)
+    AND    (   e_l.screamer IS NULL 
+            OR e_r.screamer IS NULL 
+            OR m.expr.expr.l = e_l.screamer AND m.expr.expr.r = e_r.screamer)
+  ) AS n(id, kind, op, id_l, kind_l, val_l, id_r, kind_r, val_r)
   WHERE   NOT EXISTS (SELECT 1 FROM eval AS e WHERE e.kind = 'root')
-))
+)
 SELECT e.val AS "Day 21 (part 1)"
 FROM   eval AS e
 WHERE  e.kind = 'root';
