@@ -126,7 +126,7 @@ INSERT INTO eval
 SELECT * FROM eval((SELECT m.id FROM monkeys AS m WHERE m.kind = 'root'), NULL, NULL);
 
 -- Assumption: there is exactly one `root`
-SELECT e.val AS "Day 21 (part 1)"
+SELECT e.val AS "Day 21 (part one)"
 FROM   eval AS e 
 WHERE  e.kind = 'root';
 
@@ -207,10 +207,7 @@ WHERE  m.kind = 'humn'
 ORDER BY s.step DESC 
 LIMIT 1;
 
-SELECT nh.id, nh.val, 
-       e.val  AS human_side,
-       ph.val AS other_side,
-       e.val = ph.val AS "equal?"
+SELECT nh.val AS "Day 21 (part two)"
 FROM   new_humn      AS nh,
        path_to_human AS ph,
        eval(
