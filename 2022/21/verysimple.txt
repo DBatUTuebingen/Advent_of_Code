@@ -1,0 +1,9 @@
+root: cccc + hhhh
+aaaa: 1
+bbbb: 2
+cccc: aaaa + bbbb
+dddd: 3
+eeee: 4
+ffff: dddd + eeee
+gggg: 5
+hhhh: ffff + gggg
