@@ -70,67 +70,73 @@ FROM   monkeys AS m
 WHERE  m.expr.expr IS NOT NULL;
 
 -- Part 1:
-CREATE MACRO eval(root_id) AS (
-  WITH RECURSIVE 
-  eval(screamer, kind, val) AS (
-    SELECT m.id, m.kind, m.expr.val
-    FROM   monkeys AS m 
-    WHERE  NOT m.expr.val IS NULL
-      UNION ALL 
-    SELECT CASE 
-            WHEN n.id_l IS NULL THEN n.id_r 
-            WHEN n.id_r IS NULL THEN n.id_l 
-            ELSE n.id 
-          END,
-          CASE 
-            WHEN n.kind_l IS NULL THEN n.kind_r 
-            WHEN n.kind_r IS NULL THEN n.kind_l 
-            ELSE n.kind 
-          END,
-          CASE 
-            WHEN n.val_l IS NULL THEN n.val_r 
-            WHEN n.val_r IS NULL THEN n.val_l
-            ELSE CASE n.op
-                    WHEN '+' THEN n.val_l + n.val_r
-                    WHEN '-' THEN n.val_l - n.val_r
-                    WHEN '*' THEN n.val_l * n.val_r
-                    WHEN '/' THEN n.val_l / n.val_r
-                  END  
-            END
-    FROM    (
-      SELECT DISTINCT ON (m.id)
-            m.id, m.kind, m.expr.expr.op, 
-            e_l.screamer, e_l.kind, e_l.val, 
-            e_r.screamer, e_r.kind, e_r.val
-      FROM   listeners AS l1 LEFT JOIN eval AS e_l ON l1.screamer = e_l.screamer,
-            listeners AS l2 LEFT JOIN eval AS e_r ON l2.screamer = e_r.screamer JOIN 
-            monkeys   AS m                        ON l2.listener = m.id
-      WHERE  l1.listener = l2.listener
-      AND    NOT (e_l.screamer IS NULL AND e_r.screamer iS NULL)
-      AND    (   e_l.screamer IS NULL 
-              OR e_r.screamer IS NULL 
-              OR m.expr.expr.l = e_l.screamer AND m.expr.expr.r = e_r.screamer)
-    ) AS n(id, kind, op, id_l, kind_l, val_l, id_r, kind_r, val_r)
-    WHERE   NOT EXISTS (SELECT 1 FROM eval AS e WHERE e.screamer = root_id)
-  )
-  SELECT e.val AS "Day 21 (part 1)"
-  FROM   eval AS e
-  WHERE  e.screamer = root_id
+CREATE TEMP TABLE eval (
+  monkey_id int    PRIMARY KEY REFERENCES monkeys(id),
+  kind      kind   NOT NULL,
+  val       bigint NOT NULL 
 );
 
-SELECT eval((SELECT i.id 
-             FROM   input AS i 
-             WHERE  i.name = 'root')) AS "Day 21 (part 1)";
+
+INSERT INTO eval
+WITH RECURSIVE 
+eval(screamer, kind, val) AS (
+  SELECT m.id, m.kind, m.expr.val
+  FROM   monkeys AS m 
+  WHERE  NOT m.expr.val IS NULL
+    UNION ALL 
+  SELECT CASE 
+          WHEN n.id_l IS NULL THEN n.id_r 
+          WHEN n.id_r IS NULL THEN n.id_l 
+          ELSE n.id 
+        END,
+        CASE 
+          WHEN n.kind_l IS NULL THEN n.kind_r 
+          WHEN n.kind_r IS NULL THEN n.kind_l 
+          ELSE n.kind 
+        END,
+        CASE 
+          WHEN n.val_l IS NULL THEN n.val_r 
+          WHEN n.val_r IS NULL THEN n.val_l
+          ELSE CASE n.op
+                  WHEN '+' THEN n.val_l + n.val_r
+                  WHEN '-' THEN n.val_l - n.val_r
+                  WHEN '*' THEN n.val_l * n.val_r
+                  WHEN '/' THEN n.val_l / n.val_r
+                END  
+          END
+  FROM    (
+    SELECT DISTINCT ON (m.id)
+          m.id, m.kind, m.expr.expr.op, 
+          e_l.screamer, e_l.kind, e_l.val, 
+          e_r.screamer, e_r.kind, e_r.val
+    FROM   listeners AS l1 LEFT JOIN eval AS e_l ON l1.screamer = e_l.screamer,
+          listeners AS l2 LEFT JOIN eval AS e_r ON l2.screamer = e_r.screamer JOIN 
+          monkeys   AS m                        ON l2.listener = m.id
+    WHERE  l1.listener = l2.listener
+    AND    NOT (e_l.screamer IS NULL AND e_r.screamer iS NULL)
+    AND    (   e_l.screamer IS NULL 
+            OR e_r.screamer IS NULL 
+            OR m.expr.expr.l = e_l.screamer AND m.expr.expr.r = e_r.screamer)
+  ) AS n(id, kind, op, id_l, kind_l, val_l, id_r, kind_r, val_r)
+  WHERE   NOT EXISTS (SELECT 1 FROM eval AS e WHERE e.kind = 'root')
+)
+SELECT DISTINCT * FROM eval;
+
+-- Assumption: there is exactly one `root`
+SELECT e.val AS "Day 21 (part 1)"
+FROM   eval AS e 
+WHERE  e.kind = 'root';
 
 -- Part 2:
 DROP TYPE IF EXISTS child;
 CREATE TYPE child AS ENUM ('left', 'right');
 
--- Assumption: there is exactly one human
+-- Assumption: there is exactly one `humn`
 CREATE TEMP TABLE path_to_human (
   step      int    PRIMARY KEY,
   monkey_id int    NOT NULL REFERENCES monkeys(id),
-  child     child  NOT NULL  
+  child     child  NOT NULL,
+  val       bigint NOT NULL
 );
 
 INSERT INTO path_to_human
@@ -152,8 +158,42 @@ traverse(step, id, child) AS (
 )
 SELECT ROW_NUMBER() OVER (ORDER BY t.step DESC), 
        t.id, 
-       t.child
-FROM   traverse AS t 
+       t.child,
+       CASE t.child 
+         WHEN 'left'  THEN (SELECT e.val FROM eval AS e WHERE e.monkey_id = m.expr.expr.r)
+         WHEN 'right' THEN (SELECT e.val FROM eval AS e WHERE e.monkey_id = m.expr.expr.l)
+       END
+FROM   traverse AS t JOIN monkeys AS m ON t.id = m.id
 WHERE  NOT t.child IS NULL;
 
-SELECT * FROM path_to_human ORDER BY step;
+WITH RECURSIVE 
+solve(step,x) AS (
+  SELECT 1, p.val
+  FROM   path_to_human AS p
+  WHERE  p.step = 1
+    UNION ALL 
+  SELECT s.step+1, 
+         CASE p.child 
+           WHEN 'left'  THEN 
+             CASE m.expr.expr.op
+               WHEN '+' THEN  s.x - p.val
+               WHEN '-' THEN  s.x - p.val
+               WHEN '*' THEN  s.x / p.val
+               WHEN '/' THEN  s.x * p.val
+             END 
+           WHEN 'right' THEN 
+             CASE m.expr.expr.op
+               WHEN '+' THEN  s.x - p.val
+               WHEN '-' THEN (s.x - p.val) * -1
+               WHEN '*' THEN  s.x / p.val
+               WHEN '/' THEN  p.val / s.x
+             END 
+         END
+  FROM   solve         AS s JOIN 
+         path_to_human AS p ON p.step = s.step+1 JOIN 
+         monkeys       AS m ON p.monkey_id = m.id
+)
+SELECT s.x
+FROM   solve AS s
+ORDER BY s.step DESC 
+LIMIT 1;
