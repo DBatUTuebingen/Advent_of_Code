@@ -118,6 +118,11 @@ CREATE MACRO eval(root_id) AS (
   WHERE  e.screamer = root_id
 );
 
+SELECT eval((SELECT i.id 
+             FROM   input AS i 
+             WHERE  i.name = 'root')) AS "Day 21 (part 1)";
+
+-- Part 2:
 DROP TYPE IF EXISTS child;
 CREATE TYPE child AS ENUM ('left', 'right');
 
