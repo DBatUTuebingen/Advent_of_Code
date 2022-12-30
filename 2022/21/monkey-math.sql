@@ -76,8 +76,7 @@ eval(screamer, kind, val) AS (
   FROM   monkeys AS m 
   WHERE  NOT m.expr.val IS NULL
     UNION ALL 
-  SELECT DISTINCT
-         CASE 
+  SELECT CASE 
            WHEN n.id_l IS NULL THEN n.id_r 
            WHEN n.id_r IS NULL THEN n.id_l 
            ELSE n.id 
@@ -98,7 +97,8 @@ eval(screamer, kind, val) AS (
                 END  
           END
   FROM    (
-    SELECT m.id, m.kind, m.expr.expr.op, 
+    SELECT DISTINCT ON (m.id)
+           m.id, m.kind, m.expr.expr.op, 
            e_l.screamer, e_l.kind, e_l.val, 
            e_r.screamer, e_r.kind, e_r.val
     FROM   listeners AS l1 LEFT JOIN eval AS e_l ON l1.screamer = e_l.screamer,
