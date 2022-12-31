@@ -1,6 +1,6 @@
 -- AoC 2022, Day 21 
 
-CREATE TEMP TABLE raw ( i int PRIMARY KEY, line text NOT NULL );
+CREATE TABLE raw ( i int PRIMARY KEY, line text NOT NULL );
 
 INSERT INTO raw
 SELECT ROW_NUMBER() OVER () AS i, line 
@@ -12,7 +12,7 @@ CREATE TYPE op AS ENUM ('+','-','*','/');
 DROP TYPE IF EXISTS kind;
 CREATE TYPE kind AS ENUM ('mnky', 'root', 'humn');
 
-CREATE TEMP TABLE input ( 
+CREATE TABLE input ( 
   id   int     PRIMARY KEY, 
   name char(4) NOT NULL UNIQUE,
   expr union(val bigint, expr text[])
@@ -28,7 +28,7 @@ FROM (SELECT r.i, r.line[:4], string_to_array(r.line[7:],' ') AS expr
       FROM   raw AS r
       WHERE  r.line ~ '^[a-z]{4}: [a-z]{4} [+|\-|*|/] [a-z]{4}$') AS _(i,name,expr);
 
-CREATE TEMP TABLE monkeys ( 
+CREATE TABLE monkeys ( 
   id   int     PRIMARY KEY, 
   kind kind    NOT NULL,
   expr union(val  bigint, 
@@ -53,7 +53,7 @@ WHERE  i.expr.expr IS NOT NULL;
 
 -- Assumption: all monkeys either listen to two monkeys no one else listens to 
 -- (or are screamers which listen to no one)
-CREATE TEMP TABLE listeners (
+CREATE TABLE listeners (
   screamer int PRIMARY KEY REFERENCES monkeys(id),
   listener int REFERENCES monkeys(id)
 );
@@ -70,7 +70,7 @@ FROM   monkeys AS m
 WHERE  m.expr.expr IS NOT NULL;
 
 -- Part 1:
-CREATE TEMP TABLE eval (
+CREATE TABLE eval (
   monkey_id int    PRIMARY KEY REFERENCES monkeys(id),
   kind      kind   NOT NULL,
   val       bigint NOT NULL 
@@ -139,7 +139,7 @@ DROP TYPE IF EXISTS child;
 CREATE TYPE child AS ENUM ('left', 'right');
 
 -- Assumption: there is exactly one `humn`
-CREATE TEMP TABLE path_to_human (
+CREATE TABLE path_to_human (
   step      int    PRIMARY KEY,
   monkey_id int    NOT NULL REFERENCES monkeys(id),
   child     child  NOT NULL,
@@ -175,7 +175,7 @@ FROM   traverse AS t JOIN monkeys AS m ON t.id = m.id
 WHERE  NOT t.child IS NULL;
 
 -- Then: solve for `humn` by walking along the path from `root` to `humn`
-CREATE TEMP TABLE solve AS 
+CREATE TABLE solve AS 
 WITH RECURSIVE 
 solve(step,x) AS (
   SELECT 1, p.val
@@ -205,7 +205,7 @@ solve(step,x) AS (
 )
 TABLE solve;
 
-CREATE TEMP TABLE new_humn AS 
+CREATE TABLE new_humn AS 
 SELECT m.id, s.x AS val
 FROM   solve   AS s,
        monkeys AS m 
