@@ -22,12 +22,14 @@ CREATE TABLE eval (
 );
 
 INSERT INTO eval
+SELECT 0, 1 -- At cycle 0 (before the first cycle begins), set x to 1 
+  UNION ALL -- NOT recursive
 SELECT SUM(COALESCE(i.inst * 0 + 2, 1)) OVER eval     AS cycle,
        SUM(COALESCE(i.inst, 0))         OVER eval + 1 AS x    
 FROM   input AS i
 WINDOW eval AS (ORDER BY i.line ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW);
 
-SELECT SUM((40 * segment + 20) * x) AS "Day 21 (part one)"
+SELECT SUM((40 * segment + 20) * x) AS "Day 10 (part one)"
 FROM (
   SELECT (e.cycle + 20) / 40, 
          (SELECT _e.x 
@@ -37,3 +39,25 @@ FROM (
   GROUP BY (e.cycle + 20) / 40
 ) AS _(segment, x)
 WHERE 40 * segment + 20 <= 220;
+
+SELECT STRING_AGG(CASE WHEN pixel THEN '#' ELSE '.' END, '' ORDER BY x) AS "Day 10 (part two)"
+FROM   (
+  SELECT pos.x, pos.y, pos.x BETWEEN e.x-1 AND e.x+1
+  FROM (
+    SELECT e.cycle, 
+           e.cycle-1, 
+           LAG(e.x) OVER (ORDER BY e.cycle), 
+           LAG(e.cycle) OVER (ORDER BY e.cycle)+2 = e.cycle
+    FROM   eval AS e
+    ORDER BY e.cycle
+  ) AS e(cycle, pos, x, "addx?"), LATERAL (
+    SELECT (e.cycle-1)%40, (e.cycle-1)/40
+      UNION ALL 
+    SELECT (e.cycle-2)%40, (e.cycle-2)/40
+    WHERE  e."addx?"
+  ) AS pos(x,y)
+  WHERE e.cycle > 0
+  ORDER BY e.cycle
+) AS draw(x, y, pixel)
+GROUP BY y
+ORDER BY y;
