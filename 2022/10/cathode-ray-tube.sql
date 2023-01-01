@@ -18,14 +18,16 @@ FROM   raw AS r;
 -- Part 1
 CREATE TABLE eval (
   cycle int PRIMARY KEY,
-  x     int NOT NULL
+  x     int NOT NULL,
+  loc   int REFERENCES input(line)
 );
 
 INSERT INTO eval
-SELECT 0, 1 -- At cycle 0 (before the first cycle begins), set x to 1 
-  UNION ALL -- NOT recursive
+SELECT 0, 1, NULL -- At cycle 0 (before the first cycle begins), set x to 1 
+  UNION ALL       -- NOT recursive
 SELECT SUM(COALESCE(i.inst * 0 + 2, 1)) OVER eval     AS cycle,
-       SUM(COALESCE(i.inst, 0))         OVER eval + 1 AS x    
+       SUM(COALESCE(i.inst, 0))         OVER eval + 1 AS x,
+       i.line                                         AS loc
 FROM   input AS i
 WINDOW eval AS (ORDER BY i.line ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW);
 
@@ -40,23 +42,25 @@ FROM (
 ) AS _(segment, x)
 WHERE 40 * segment + 20 <= 220;
 
+-- Part 2
+CREATE MACRO is_addx(inst) AS inst IS NOT NULL;
+
 SELECT STRING_AGG(CASE WHEN pixel THEN '#' ELSE '.' END, '' ORDER BY x) AS "Day 10 (part two)"
 FROM   (
   SELECT pos.x, pos.y, pos.x BETWEEN e.x-1 AND e.x+1
   FROM (
     SELECT e.cycle, 
-           e.cycle-1, 
            LAG(e.x) OVER (ORDER BY e.cycle), 
-           LAG(e.cycle) OVER (ORDER BY e.cycle)+2 = e.cycle
-    FROM   eval AS e
+           is_addx(i.inst)
+    FROM   eval AS e JOIN input AS i ON e.loc = i.line
     ORDER BY e.cycle
-  ) AS e(cycle, pos, x, "addx?"), LATERAL (
+  ) AS e(cycle, x, "addx?"), LATERAL (
     SELECT (e.cycle-1)%40, (e.cycle-1)/40
       UNION ALL 
     SELECT (e.cycle-2)%40, (e.cycle-2)/40
     WHERE  e."addx?"
   ) AS pos(x,y)
-  WHERE e.cycle > 0
+  WHERE  e.cycle > 0
   ORDER BY e.cycle
 ) AS draw(x, y, pixel)
 GROUP BY y
