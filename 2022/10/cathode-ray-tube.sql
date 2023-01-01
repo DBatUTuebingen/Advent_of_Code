@@ -53,7 +53,6 @@ FROM   (
            LAG(e.x) OVER (ORDER BY e.cycle), 
            is_addx(i.inst)
     FROM   eval AS e JOIN input AS i ON e.loc = i.line
-    ORDER BY e.cycle
   ) AS e(cycle, x, "addx?"), LATERAL (
     SELECT (e.cycle-1)%40, (e.cycle-1)/40
       UNION ALL 
@@ -61,7 +60,6 @@ FROM   (
     WHERE  e."addx?"
   ) AS pos(x,y)
   WHERE  e.cycle > 0
-  ORDER BY e.cycle
 ) AS draw(x, y, pixel)
 GROUP BY y
 ORDER BY y;
