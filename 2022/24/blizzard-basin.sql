@@ -69,32 +69,43 @@ steps(step,dir,x,y) AS (
 SELECT DISTINCT s.step, s.x, s.y FROM steps AS s;
 
 -- Shortest path from (1,0) to (x,y+1)
-WITH RECURSIVE 
-astar(iter, visited) AS (
-SELECT 1, [[NULL :: int, NULL :: int, 1, 0, 0]]
-  UNION ALL (
-WITH
-visited(px, py, x, y, step) AS (
-  SELECT arr[1], arr[2], arr[3], arr[4], arr[5] 
-  FROM   astar AS a, unnest(a.visited) AS _(arr)
-)
-SELECT a.iter+1, array_append(a.visited, (
-SELECT [v.x, v.y, v.x+Δ.x, v.y+Δ.y, v.step+1]
-FROM   (VALUES (-1,0),(0,-1),(1,0),(0,1),(0,0)) AS Δ(x,y), 
-       visited    AS v,
-       dimensions AS d
-WHERE  ((v.x+Δ.x,v.y+Δ.y) = (d.x,d.y+1) OR (v.x+Δ.x BETWEEN 1 AND d.x AND v.y+Δ.y BETWEEN 1 AND d.y))
-AND    NOT EXISTS (SELECT 1 FROM visited   AS v_ WHERE (v_.x, v_.y, v_.step) = (v.x+Δ.x, v.y+Δ.y,  v.step+1       ))
-AND    NOT EXISTS (SELECT 1 FROM blizzards AS b  WHERE (b.x , b.y , b.step ) = (v.x+Δ.x, v.y+Δ.y, (v.step+1)%d.lcm))
-ORDER BY v.step + 1 + (d.x-(v.x+Δ.x)) + ((d.y+1)-(v.y+Δ.y))
---         Steps    +     Heuristic (Manhattan-Distance)
-lIMIT 1))
-FROM    astar AS a
-WHERE   NOT EXISTS (SELECT 1 FROM visited AS v JOIN dimensions AS d ON (v.x,v.y) = (d.x,d.y+1))
-))
-SELECT arr[3] AS x, arr[4] AS y, arr[5] AS step
-FROM   astar             AS a, 
-       unnest(a.visited) AS _(arr),
-       dimensions        AS d
-WHERE  (arr[3],arr[4]) = (d.x,d.y+1)
-AND    a.iter = (SELECT MAX(a.iter) FROM astar AS a);
+CREATE MACRO shortest_path(sx,sy,sstep,tx,ty) AS TABLE (
+  WITH RECURSIVE 
+  astar(iter, visited) AS (
+  SELECT 1, [[NULL :: int, NULL :: int, sx, sy, sstep]]
+    UNION ALL (
+  WITH
+  visited(px, py, x, y, step) AS (
+    SELECT arr[1], arr[2], arr[3], arr[4], arr[5] 
+    FROM   astar AS a, unnest(a.visited) AS _(arr)
+  )
+  SELECT a.iter+1, array_append(a.visited, (
+  SELECT [v.x, v.y, v.x+Δ.x, v.y+Δ.y, v.step+1]
+  FROM   (VALUES (-1,0),(0,-1),(1,0),(0,1),(0,0)) AS Δ(x,y), 
+         visited    AS v,
+         dimensions AS d
+  WHERE  ((v.x+Δ.x,v.y+Δ.y) = (tx,ty) OR (v.x+Δ.x BETWEEN 1 AND d.x AND v.y+Δ.y BETWEEN 1 AND d.y))
+  AND    NOT EXISTS (SELECT 1 FROM visited   AS v_ WHERE (v_.x, v_.y, v_.step) = (v.x+Δ.x, v.y+Δ.y,  v.step+1       ))
+  AND    NOT EXISTS (SELECT 1 FROM blizzards AS b  WHERE (b.x , b.y , b.step ) = (v.x+Δ.x, v.y+Δ.y, (v.step+1)%d.lcm))
+  ORDER BY v.step + 1 + ABS(tx-(v.x+Δ.x)) + ABS(ty-(v.y+Δ.y))
+  --         Steps    +     Heuristic (Manhattan-Distance)
+  lIMIT 1))
+  FROM    astar AS a
+  WHERE   NOT EXISTS (SELECT 1 FROM visited AS v JOIN dimensions AS d ON (v.x,v.y) = (tx,ty))
+  ))
+  SELECT arr[3] AS x, arr[4] AS y, arr[5] AS step
+  FROM   astar             AS a, 
+         unnest(a.visited) AS _(arr),
+         dimensions        AS d
+  WHERE  (arr[3],arr[4]) = (tx,ty)
+  AND    a.iter = (SELECT MAX(a.iter) FROM astar AS a)
+);
+
+CREATE TABLE walks AS (
+  SELECT s.x, s.y, s.step
+  FROM   dimensions AS d, 
+         shortest_path(1,0,0,d.x,d.y+1) AS s
+);
+
+SELECT w.step "Day 21 (part one)"
+FROM   walks AS w;
