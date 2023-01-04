@@ -4,7 +4,7 @@ CREATE TABLE raw ( i int PRIMARY KEY, line text NOT NULL );
 
 INSERT INTO raw
 SELECT ROW_NUMBER() OVER () AS i, line 
-FROM   read_csv_auto('input.txt') AS _(line);
+FROM   read_csv_auto('simple.txt') AS _(line);
 
 -- Holds exactly one row that describes the dimensions of the valley.
 -- (1,1) to (x,y)
@@ -26,19 +26,21 @@ CREATE MACRO lcm(a,b) AS (
 );
 
 INSERT INTO dimensions 
-SELECT MAX(r.i-2), MAX(length(r.line)-2), lcm((SELECT MAX(r.i-2) FROM raw AS r),(SELECT MAX(length(r.line)-2) FROM raw AS r))
+SELECT MAX(length(r.line)-2), MAX(r.i-2), lcm((SELECT MAX(length(r.line)-2) FROM raw AS r), (SELECT MAX(r.i-2) FROM raw AS r))
 FROM   raw AS r;
 
 CREATE TYPE dir AS ENUM ('<','^','>','v');
 
-CREATE TABLE blizzards ( step int, dir dir, x int, y int );
+CREATE TABLE blizzards ( step int, x int, y int );
 
-CREATE INDEX pos_idx ON blizzards (step,x,y);
+CREATE UNIQUE INDEX pos_idx ON blizzards (step,x,y);
 
+-- Produce all positions of the blizards in every step
+-- There exist exactly lcm(width,height) many arrangements
 INSERT INTO blizzards
 WITH RECURSIVE 
 steps(step,dir,x,y) AS (
-  SELECT  1, arr[x] :: dir, x-1, r.i-1
+  SELECT  0, arr[x] :: dir, x-1, r.i-1
   FROM    raw AS r,
   LATERAL (SELECT string_to_array(r.line, '')) AS _(arr),
   LATERAL (SELECT generate_subscripts(arr,1))  AS __(x)
@@ -62,8 +64,37 @@ steps(step,dir,x,y) AS (
          END 
   FROM   steps      AS s, 
          dimensions AS d 
-  WHERE  s.step < d.lcm 
+  WHERE  s.step+1 < d.lcm 
 )
-TABLE steps;
+SELECT DISTINCT s.step, s.x, s.y FROM steps AS s;
 
 -- Shortest path from (1,0) to (x,y+1)
+WITH RECURSIVE 
+astar(iter, visited) AS (
+SELECT 1, [[NULL :: int, NULL :: int, 1, 0, 0]]
+  UNION ALL (
+WITH
+visited(px, py, x, y, step) AS (
+  SELECT arr[1], arr[2], arr[3], arr[4], arr[5] 
+  FROM   astar AS a, unnest(a.visited) AS _(arr)
+)
+SELECT a.iter+1, array_append(a.visited, (
+SELECT [v.x, v.y, v.x+Δ.x, v.y+Δ.y, v.step+1]
+FROM   (VALUES (-1,0),(0,-1),(1,0),(0,1),(0,0)) AS Δ(x,y), 
+       visited    AS v,
+       dimensions AS d
+WHERE  ((v.x+Δ.x,v.y+Δ.y) = (d.x,d.y+1) OR (v.x+Δ.x BETWEEN 1 AND d.x AND v.y+Δ.y BETWEEN 1 AND d.y))
+AND    NOT EXISTS (SELECT 1 FROM visited   AS v_ WHERE (v_.x, v_.y, v_.step) = (v.x+Δ.x, v.y+Δ.y,  v.step+1       ))
+AND    NOT EXISTS (SELECT 1 FROM blizzards AS b  WHERE (b.x , b.y , b.step ) = (v.x+Δ.x, v.y+Δ.y, (v.step+1)%d.lcm))
+ORDER BY v.step + 1 + (d.x-(v.x+Δ.x)) + ((d.y+1)-(v.y+Δ.y))
+--         Steps    +     Heuristic (Manhattan-Distance)
+lIMIT 1))
+FROM    astar AS a
+WHERE   NOT EXISTS (SELECT 1 FROM visited AS v JOIN dimensions AS d ON (v.x,v.y) = (d.x,d.y+1))
+))
+SELECT arr[3] AS x, arr[4] AS y, arr[5] AS step
+FROM   astar             AS a, 
+       unnest(a.visited) AS _(arr),
+       dimensions        AS d
+WHERE  (arr[3],arr[4]) = (d.x,d.y+1)
+AND    a.iter = (SELECT MAX(a.iter) FROM astar AS a);
