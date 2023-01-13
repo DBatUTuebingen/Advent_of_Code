@@ -29,3 +29,20 @@ $ duckdb --no-stdin --init regolith-reservoir-part1.sql
 └────────┘
 ~~~
 
+## Part 2
+
+Runs in about 24 minutes on my machine.
+
+Usage:
+
+~~~
+$ duckdb --no-stdin --init regolith-reservoir-part2.sql
+-- Loading resources from regolith-reservoir-part2.sql
+┌────────┐
+│ rested │
+│ int32  │
+├────────┤
+│  23416 │
+└────────┘
+~~~
+
