@@ -13,11 +13,17 @@ yet, so we resort to an explicit recursive formulation.  With
 Denis' PR https://github.com/duckdb/duckdb/pull/6766 this should
 be rectified soon, hopefully.)
 
-### Part 1
-
 The main CTE `expedition(minute, x, y, done)` records **all possible elf
 `x,y` locations at every `minute`** until `(x,y) ≡ grid.stop` (at which
-point we have `done ≡ true`).
+point we have `done ≡ true`).  
+
+We wrap the CTE in a macro `expedition(minute, here, there)` in file
+`blizzard-basin.sql` since Part 2 needs to invoke the expedition three
+times.
+
+
+### Part 1
+
 
 Usage:
 
@@ -26,14 +32,32 @@ on my MacBook M1 Pro).  The actual expedition then finishes within 4 seconds.
 
 ~~~
 $ duckdb < blizzard-basin-part1.sql
-Run Time (s): real 0.000 user 0.000043 sys 0.000006
-Run Time (s): real 184.628 user 801.829298 sys 6.265771 ← precomputation
+Run Time (s): real 0.000 user 0.000022 sys 0.000008
+Run Time (s): real 182.341 user 706.577883 sys 40.820970 ← precomputation
+Run Time (s): real 0.001 user 0.000385 sys 0.000012
 ┌─────────┐
 │ minutes │
 │  int32  │
 ├─────────┤
 │     297 │
 └─────────┘
-Run Time (s): real 3.905 user 13.306937 sys 1.047907 ← expedition
+Run Time (s): real 3.701 user 10.388853 sys 1.061041 ← expedition
 ~~~
 
+### Part 2
+
+Usage:
+
+~~~
+$ duckdb < blizzard-basin-part2.sql
+Run Time (s): real 0.000 user 0.000016 sys 0.000003
+Run Time (s): real 183.493 user 888.513324 sys 24.570338 ← precomputation
+Run Time (s): real 0.000 user 0.000384 sys 0.000003
+┌─────────┐
+│ minutes │
+│  int32  │
+├─────────┤
+│     856 │
+└─────────┘
+Run Time (s): real 10.728 user 30.184098 sys 3.257323 ← three expeditions
+~~~
