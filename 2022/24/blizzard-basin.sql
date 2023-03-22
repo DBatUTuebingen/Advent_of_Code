@@ -8,21 +8,6 @@ CREATE MACRO v2(x, y) AS
 CREATE MACRO modulo(a,b) AS
   ((a) % (b) + (b)) % (b);
 
--- Least common multiple
-CREATE MACRO lcm(x,y) AS (
-  WITH RECURSIVE
-  gcd(a,b) AS (
-    SELECT x AS a, y AS b
-      UNION ALL
-    SELECT g.b, g.a % g.b
-    FROM   gcd AS g
-    WHERE  g.b <> 0
-  )
-  SELECT x * y /g.a
-  FROM   gcd AS g
-  WHERE  g.b = 0
-);
-
 DROP TABLE IF EXISTS blizzards;
 CREATE TABLE blizzards AS
   WITH
@@ -38,19 +23,12 @@ CREATE TABLE blizzards AS
 
 DROP TABLE IF EXISTS grid;
 CREATE TABLE grid AS
-  WITH
-  grid(width, height, start, goal, repeat) AS (
-    SELECT MAX(b.x) + 1          AS width,
-           MAX(b.y) + 1          AS height,
-           v2(0, -1)             AS start,
-           v2(width - 1, height) AS goal,
-           -- awkward (no correlation in recursive CTEs)
-           -- should read: lcm(width, height) AS repeat
-           lcm((SELECT MAX(b.x) + 1 FROM blizzards AS b),
-               (SELECT MAX(b.y) + 1 FROM blizzards AS b)) AS repeat
-    FROM   blizzards AS b
-  )
-  TABLE grid;
+  SELECT MAX(b.x) + 1          AS width,
+         MAX(b.y) + 1          AS height,
+         v2(0, -1)             AS start,
+         v2(width - 1, height) AS goal,
+         lcm(width, height)    AS repeat
+  FROM   blizzards AS b;
 
 -- start/goal location in the valley
 CREATE MACRO start() AS (SELECT g.start FROM grid AS g);
