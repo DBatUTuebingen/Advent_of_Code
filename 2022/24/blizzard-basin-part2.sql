@@ -1,7 +1,7 @@
 -- AoC 2022, Day 24 (Part 2)
 
 -- AoC input file
-CREATE MACRO input() AS 'input.txt';
+CREATE MACRO input() AS 'input-sample.txt';
 
 .read blizzard-basin.sql
 
