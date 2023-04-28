@@ -103,7 +103,6 @@ run (finished, mode, pos_x, pos_y, dir, wall, map, steps, directions) AS (
   (
   -- step
   WITH let0(st) AS (
-  --                 69    117     >
     SELECT step(r.pos_x, r.pos_y, r.dir, r.map) AS st, r.*
     FROM run r
     WHERE NOT r.finished AND r.mode AND NOT r.wall AND len(r.steps) > 0 AND r.steps[1] > 0
