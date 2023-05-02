@@ -1,10 +1,9 @@
 PRAGMA temp_directory='tmp.tmp';
-.maxrows 50
 .timer on
 
 -- input source and size of the partial dice map, e.g. for the main input, one side of the dice is a 50x50 map
-CREATE MACRO input() AS ('input-sample.txt');
-CREATE MACRO tiles() AS (4);
+CREATE MACRO input() AS ('input.txt');
+CREATE MACRO tiles() AS (50);
 
 CREATE TABLE dice(area integer, border char(1), neighbour integer, rotation integer);
 
@@ -163,7 +162,7 @@ CREATE MACRO step(p_x, p_y, area_label, rotation1, dir) AS (
     UNION ALL
     SELECT p_y-1 = 0 AS dice_change,       p_x, CASE WHEN dice_change THEN tiles() ELSE p_y-1 END WHERE dir = '^'
   ), the_map(area, x, y, map, full_rot, new_rot) AS (
-    SELECT d.neighbour, n.x, n.y, dm.map, mod(dm.rotation - d.rotation - rotation1 +360, 360), mod(d.rotation+rotation1, 360)
+    SELECT d.neighbour, n.x, n.y, dm.map, mod(dm.rotation - d.rotation - rotation1 +720, 360), mod(d.rotation+rotation1, 360)
     FROM new_pos n, dice d, dice_map dm
     WHERE n.dice_change AND d.area = area_label AND d.border = rotate_dir(dir, mod(360-rotation1, 360)) AND dm.area = d.neighbour -- FIXME this dir might have to be altered by rotation
 
@@ -202,13 +201,13 @@ WITH RECURSIVE input(lines, num) AS (
   FROM input i
   WHERE i.num = (SELECT max(i.num) FROM input i)
   ), map_steps(s) AS (
-  SELECT [e :: integer for e in string_split_regex(i.lines, '[R|L]')]
+  SELECT [e :: integer for e in string_split_regex(i.lines, '[R|L]')] -- '
   FROM input i
   WHERE i.num = (SELECT MAX(i.num) FROM input i)
   ),
-  run(finished, mode, pos_x, pos_y, area, rotation, dir, wall, steps, directions) AS (
+  run(it, finished, mode, pos_x, pos_y, area, rotation, dir, wall, steps, directions) AS (
   (
-    SELECT false AS finished, true AS mode,
+    SELECT 1 AS it, false AS finished, true AS mode,
            1 AS pos_x, 1 AS pos_y, 1 AS area, 0 AS rotation,
            '>' AS dir, false AS wall,
            s AS steps, d AS directions
@@ -224,7 +223,8 @@ WITH RECURSIVE input(lines, num) AS (
       FROM run AS r
       WHERE NOT r.finished AND r.mode AND NOT r.wall AND len(r.steps) > 0 AND r.steps[1] > 0
     )
-    SELECT r.* EXCLUDE(st) REPLACE(st['pos_x'] AS pos_x,
+    SELECT r.* EXCLUDE(st) REPLACE(r.it + 1 AS it,
+                                   st['pos_x'] AS pos_x,
                                    st['pos_y'] AS pos_y,
                                    st['area'] AS area,
                                    st['rotation'] AS rotation,
@@ -254,12 +254,12 @@ WITH RECURSIVE input(lines, num) AS (
     FROM run r
     WHERE NOT r.finished AND len(r.steps) + len(r.directions) = 0
   )
-), run_result(pos_x, pos_y, facing, area) AS (
-  SELECT r.pos_x, r.pos_y, facing(r.dir), r.area
+), run_result(pos_x, pos_y, facing, rotation, area) AS (
+  SELECT r.pos_x, r.pos_y, facing(r.dir), r.rotation, r.area
   FROM run r
   WHERE r.finished
 ), get_coordinates(pos_x, pos_y, facing, x, y, rotation) AS (
-  SELECT r.pos_x, r.pos_y, r.facing, dm.x, dm.y, dm.rotation
+  SELECT r.pos_x, r.pos_y, r.facing, dm.x, dm.y, mod(dm.rotation - r.rotation + 360, 360) AS rotation
   FROM run_result r, dice_map dm
   WHERE r.area = dm.area
 ), rotate_res(pos_x, pos_y, facing, x, y) AS (
