@@ -1,23 +1,11 @@
--- AoC 2022, Day 19 (Part 1)
-
-
--- Part 1
-CREATE MACRO minutes() AS 24;
-CREATE MACRO blueprints() AS 30;
-CREATE MACRO agg(m) AS SUM(m.blueprint * m.geodes);
-
--- Part 2
--- CREATE MACRO minutes() AS 32;
--- CREATE MACRO blueprints() AS 3;
--- CREATE MACRO agg(m) AS PRODUCT(m.geodes) :: int;
-
-
--- ∞ (infinite cost)
-CREATE MACRO oo() AS 1000000;
+-- AoC 2022, Day 19 (code common to Parts 1 & 2)
 
 -- a robot/resource vector
 -- (indices: ore=1, clay=2, obsidian=3, geode=4)
 CREATE TYPE vec4 AS int[4];
+
+-- ∞ (infinite cost)
+CREATE MACRO oo() AS 1000000;
 
 
 CREATE TABLE input (
@@ -161,7 +149,7 @@ mining(mins, id, blueprint, resources, robots) AS (
     WHERE   NOT (s.p0 OR s.p1 OR s.p2 OR s.p3 OR s.p4)
   )
 )
-SELECT agg(m) AS geodes
+SELECT AGG(m) AS geodes
 FROM   (SELECT id AS blueprint, MAX(resources[4]) AS geodes
         FROM   mining
         GROUP BY id) AS m;
