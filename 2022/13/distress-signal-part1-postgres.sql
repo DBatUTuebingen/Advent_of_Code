@@ -9,11 +9,11 @@ CREATE OR REPLACE FUNCTION remove_first(jb jsonb) RETURNS jsonb AS $$
     UNION
     SELECT jb - 0
     WHERE jsonb_typeof(jb) = 'array' AND jsonb_array_length(jb) > 1
-       OR jsonb_typeof(jb) = 'array' AND jsonb_array_length(jb) = 1 AND jsonb_typeof(jb - 0) = 'array'
+    --    OR jsonb_typeof(jb) = 'array' AND jsonb_array_length(jb) = 1 AND jsonb_typeof(jb - 0) = 'array' -- commenting out this *should* make a difference, but doesn't somehow
     UNION
     SELECT NULL::jsonb
     WHERE jsonb_typeof(jb) = 'array' AND jsonb_array_length(jb) = 0
-       OR jsonb_typeof(jb) = 'array' AND jsonb_array_length(jb) = 1 AND jsonb_typeof(jb - 0) = 'number'
+    --    OR jsonb_typeof(jb) = 'array' AND jsonb_array_length(jb) = 1 AND jsonb_typeof(jb - 0) = 'number' -- commenting out this *should* make a difference, but doesn't somehow
 $$ LANGUAGE SQL;
 
 CREATE OR REPLACE FUNCTION prepend(pp jsonb, jb jsonb) RETURNS jsonb AS $$
@@ -105,6 +105,7 @@ worker (level, idx, fst, snd, f, s, c) AS (
     AND (true_case(w.fst, w.snd, w.f, w.s)
     OR (w.f < w.s AND jsonb_typeof(w.f) = 'number' AND jsonb_typeof(w.s) = 'number'))
 
+    --------
     UNION ALL
 
     SELECT w.level + 1, w.idx, w.fst, w.snd, w.f, w.s, False as c
