@@ -126,7 +126,7 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
         toSiblingOrChildren AS (
             SELECT c.*
             FROM collector c, lastIteration l
-            WHERE c.rec AND c.idx = l.idx AND (l.id + 1 = c.parent OR l.id + 1 = c.id)
+            WHERE c.rec AND c.idx = l.idx AND (list_contains(c.ids, l.id+1) OR l.id + 1 = c.id)
         ), idxs(idx) AS (
             SELECT idx FROM lastIteration WHERE idx NOT in (SELECT idx FROM toSiblingOrChildren)
         )
@@ -148,7 +148,11 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
 
             SELECT x+1, c.*
             FROM collector c, lastIteration l, toParent p
-            WHERE NOT c.idx IN (SELECT idx FROM toSiblingOrChildren) AND NOT c.idx IN (SELECT idx FROM toParent) AND c.idx = l.idx AND c.idx = p.idx AND c.rec AND (l.ids[x+1]+1 = c.parent OR l.ids[x+1] = c.idx) AND l.ids[x+1] IS NOT NULL
+            WHERE c.rec AND c.idx = l.idx AND c.idx = p.idx
+            AND (l.ids[x+1]+1 = c.idx OR list_contains(c.ids, l.ids[x+1]+1)) -- fixed a +1 bug here
+            AND NOT c.idx IN (SELECT idx FROM to_parent WHERE i IS NOT NULL) -- go up just to next node, not second next as well; fixed bug with "WHERE i IS NOT NULL" -> it used to always delete the result because it thought there already was one
+            -- AND NOT c.idx IN (SELECT idx FROM to_sibling_or_children)       -- this should be covered anyway by the fact that to_parent is initialized with idxs which is already filtered from to_sibling_or_children
+            -- AND l.ids[x+1] IS NOT NULL                                   -- this should be covered anyway by the fact that x=NULL doesn't hold anyway
             )
         )
         -- when finding the correct subtree to follow: pick the leftmost child (aka the one with the min id)
