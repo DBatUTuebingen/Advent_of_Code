@@ -1,7 +1,3 @@
--- the first example in "input-sample.txt" is straightforward and working. The second one (idx=2) involves
--- going up the tree and is problematic. This example doesn't make any progress from iteration 3-8 (variable i)
--- and tbh I don't understand why progress starts again in iterations 9-12. (The result of this example is correct
--- but this is not the desired behaviour, obviously.)
 .nullvalue '⎕'
 .maxrows 170
 
@@ -93,61 +89,53 @@ worker(i, idx, parent, id, ids, fst, snd, rec, res) AS (
     WHERE rec AND fst IS NOT NULL AND snd IS NULL
     )
 ),
------------------------- everything works until here -----------------------------
 -- since the worker did a bfs not caring about when to cut off, the collector now needs to traverse
 -- the results of the worker in dfs manner to obtain the correct result per index/list comparison:
 -- node=0: continue dfs, node=1: overall result=false, node=-1: overall result=true
 collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
-    -- copy the result rows of the worker + reset + two more
+    -- copy the result rows of the worker + reset (of i and rec) + two more booleans for the logic
     SELECT * REPLACE(1 AS i, true AS rec), false AS finished, false AS last_iter
     FROM worker
     WHERE NOT rec
 
     UNION ALL
 
-    (WITH lastIteration AS (
+    (WITH last_iteration AS (
         SELECT * FROM collector WHERE last_iter
     ),
     -- identify next row to collect in dfs manner
     rank1 AS (
-        -- collect result rows with min id on first iteration (the leftmost child under the root has the min id)
-        SELECT * EXCLUDE(r)
-        FROM (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY idx ORDER BY id) AS r
-            FROM collector
-            WHERE rec
-        )
-        WHERE (SELECT COUNT(*) FROM lastIteration) = 0 AND r = 1
-
-        UNION ALL
-        -- collect result rows following tree structure on every following iteration
+        -- collect result rows following the tree structure via dfs (aka leftmost deepest child first)
+        -- we're always searching the leftmost deepest child as we simply "forget" all rows concerning
+        -- the subtrees to the left that we've already seen
         (WITH RECURSIVE
         -- following the tree structure down to siblings/children
-        toSiblingOrChildren AS (
+        to_sibling_or_children AS (
             SELECT c.*
-            FROM collector c, lastIteration l
+            FROM collector c, last_iteration l
             WHERE c.rec AND c.idx = l.idx AND (list_contains(c.ids, l.id+1) OR l.id + 1 = c.id)
         ), idxs(idx) AS (
-            SELECT idx FROM lastIteration WHERE idx NOT in (SELECT idx FROM toSiblingOrChildren)
-        )
+            SELECT idx FROM last_iteration WHERE idx NOT in (SELECT idx FROM to_sibling_or_children)
+        ),
         -- following the tree structure up (because the current subtree is explored)
-        -- this is presumably the part that fails. On the other hand, I don't see much change when
-        -- this part is commented out. But it should be essential to go up the tree.
-        , toParent(x) AS (
-            SELECT 0 AS x, NULL AS i, idx AS idx, NULL AS parent, NULL AS id, NULL AS ids, NULL AS fst, NULL AS snd, NULL AS rec, NULL AS res, NULL AS finished, NULL AS last_iter
+        to_parent(x) AS (
+            SELECT 0::int AS x, NULL::int AS i, idx AS idx, NULL::int AS parent, NULL::int AS id,
+                   NULL::int[] AS ids, NULL::varchar AS fst, NULL::varchar AS snd, NULL::boolean AS rec,
+                   NULL::int AS res, NULL::boolean AS finished, NULL::boolean AS last_iter
             FROM idxs
 
             UNION ALL
 
             (
+            -- this ominous row is just there to keep looping until a result is found
             SELECT x+1, NULL, p.idx, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
-            FROM toParent p, lastIteration l
+            FROM to_parent p, last_iteration l
             WHERE p.idx = l.idx AND l.ids[x+1] IS NOT NULL
 
             UNION ALL
 
             SELECT x+1, c.*
-            FROM collector c, lastIteration l, toParent p
+            FROM collector c, last_iteration l, to_parent p
             WHERE c.rec AND c.idx = l.idx AND c.idx = p.idx
             AND (l.ids[x+1]+1 = c.idx OR list_contains(c.ids, l.ids[x+1]+1)) -- fixed a +1 bug here
             AND NOT c.idx IN (SELECT idx FROM to_parent WHERE i IS NOT NULL) -- go up just to next node, not second next as well; fixed bug with "WHERE i IS NOT NULL" -> it used to always delete the result because it thought there already was one
@@ -155,25 +143,70 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
             -- AND l.ids[x+1] IS NOT NULL                                   -- this should be covered anyway by the fact that x=NULL doesn't hold anyway
             )
         )
-        -- when finding the correct subtree to follow: pick the leftmost child (aka the one with the min id)
-        SELECT * EXCLUDE(r)
-        FROM ( SELECT *, ROW_NUMBER() OVER (PARTITION BY idx ORDER BY id) AS r
-                FROM (
-                    SELECT * FROM toSiblingOrChildren
-                    UNION ALL
-                    SELECT * EXCLUDE(x) FROM toParent WHERE i IS NOT NULL
-                )
+        -- when finding the correct subtree to follow:
+        -- (a) on first iteration: root
+        -- (b) if the subtree is not explored: direct children or siblings/nieces/nephews
+        -- (c) if the subtree is explored: search ancestors for next subtree
+        -- pick the leftmost deepest child (aka the one with the min id (of direkt children, not overall!!!))
+        , leftmost_child AS (
+            -- collect result rows that are leftmost deepest child on first iteration
+            SELECT -1 AS x, false AS fin, c.*
+            FROM collector c
+            WHERE (SELECT COUNT(*) FROM last_iteration) = 0
+
+            UNION ALL
+
+            SELECT -1 AS x, false AS fin, tp.* EXCLUDE(x)
+            FROM to_parent tp
+            WHERE i IS NOT NULL
+
+            UNION ALL
+
+            SELECT -1 AS x, false AS fin, tsc.*
+            FROM to_sibling_or_children tsc
+
+            UNION ALL
+
+            (WITH minIds(minId, idx) AS (
+                SELECT MIN(id), idx
+                FROM leftmost_child
+                WHERE NOT fin AND ids[x-1] IS NULL
+                GROUP BY idx
+
+                UNION ALL
+
+                SELECT MIN(ids[x-1]), idx
+                FROM leftmost_child
+                WHERE NOT fin
+                GROUP BY idx
+            ), m(minId, idx) AS (
+                SELECT MIN(minId), idx
+                FROM minIds
+                GROUP BY idx
+            )
+            SELECT lc.* REPLACE(x-1 AS x)
+            FROM leftmost_child lc, m
+            WHERE lc.idx = m.idx AND list_contains(lc.ids, m.minId)
+
+            UNION ALL
+
+            SELECT lc.* REPLACE(x-1 AS x, true AS fin)
+            FROM leftmost_child lc, m
+            WHERE lc.idx = m.idx AND lc.id = m.minId
+            )
         )
-        WHERE r = 1
+        SELECT * EXCLUDE(x, fin)
+        FROM leftmost_child
+        WHERE fin
         )
     ),
     -- result indicates recursion
     -- we remember these rows with the flag last_iter=True to know our current position in the tree.
-    toRecurse AS (
+    to_recurse AS (
         SELECT * REPLACE (false AS rec, true AS last_iter) FROM rank1 WHERE res = 0
     ),
     -- rows to finish: rows where we find -1/1 as a result. We can cut off computation here.
-    toFinish AS (
+    to_finish AS (
         SELECT * REPLACE(false AS rec, true AS res)
         FROM rank1
         WHERE res = -1
@@ -187,25 +220,25 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
     -- copy the finished rows to keep track of what we've seen and know now
     -- this might be a point where we can optimise and use the finished flag more efficiently
     -- atm all finished comparisons are copied each iteration until the last comparison finishes
-    copyFinished AS (
+    copy_finished AS (
         SELECT * FROM collector WHERE NOT rec AND NOT finished AND NOT last_iter AND (SELECT COUNT(*) FROM rank1) > 0
         UNION  ALL
         SELECT * REPLACE(true AS finished) FROM collector WHERE NOT rec AND NOT finished AND (SELECT COUNT(*) FROM rank1) = 0
     ),
     -- copy the worker results we need for further recursion, don't copy our current rows (in rank1)
     -- and all rows relating to our now finished comparisons (early cut-off)
-    toCopy AS (
+    to_copy AS (
         SELECT * FROM collector
-        WHERE rec AND id NOT IN (SELECT id FROM rank1) AND idx NOT IN (SELECT idx FROM toFinish)
+        WHERE rec AND id NOT IN (SELECT id FROM rank1) AND idx NOT IN (SELECT idx FROM to_finish)
     )
     -- collect all the results/copy rows etc
-    SELECT * REPLACE(i+1 AS i) FROM toRecurse
+    SELECT * REPLACE(i+1 AS i) FROM to_recurse
     UNION ALL
-    SELECT * REPLACE(i+1 AS i) FROM toFinish
+    SELECT * REPLACE(i+1 AS i) FROM to_finish
     UNION ALL
-    SELECT * REPLACE(i+1 AS i) FROM copyFinished
+    SELECT * REPLACE(i+1 AS i) FROM copy_finished
     UNION ALL
-    SELECT * REPLACE(i+1 AS i) FROM toCopy
+    SELECT * REPLACE(i+1 AS i) FROM to_copy
     )
 )
 SELECT SUM(idx), list_sort(list(idx))
