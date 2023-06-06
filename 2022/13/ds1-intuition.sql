@@ -46,7 +46,7 @@ worker(i, idx, parent, id, ids, fst, snd, rec, res) AS (
     UNION ALL
     (
     -- both are numbers: compare the numbers
-    SELECT * REPLACE(i+1 AS i, false AS rec, comp(fst, snd) AS res)
+    SELECT * REPLACE(i+1 AS i, false AS rec, comp(fst::Int, snd::Int) AS res)
     FROM worker
     WHERE rec AND NOT fst ^@ '[' AND NOT snd ^@ '['
 
