@@ -3,7 +3,7 @@
 -- and tbh I don't understand why progress starts again in iterations 9-12. (The result of this example is correct
 -- but this is not the desired behaviour, obviously.)
 .nullvalue '⎕'
-.maxrows 260
+.maxrows 170
 
 -- FIXME: this is hardcoded: start sequence at some number > input length
 CREATE SEQUENCE serial START 1000;
@@ -20,7 +20,7 @@ SELECT 1 WHERE fst > snd
 -- read csv
 WITH RECURSIVE input(row, signal) AS (
      SELECT ROW_NUMBER() OVER () AS row, s AS signal
-     FROM read_csv('/Users/louisalambrecht/git/Advent_of_Code/2022/13/input-sample.txt',
+     FROM read_csv('/Users/louisalambrecht/git/Advent_of_Code/2022/13/input.txt',
                    delim='|', header=False, columns={'signal': 'char[]'}) AS c(s)
 ),
 -- parse input into sensible schema
@@ -91,10 +91,6 @@ worker(i, idx, parent, id, ids, fst, snd, rec, res) AS (
     SELECT * REPLACE(i+1 AS i, false AS rec, 1 AS res)
     FROM worker
     WHERE rec AND fst IS NOT NULL AND snd IS NULL
-
-
-    -- FIXME: both null - can that happen?! I don't think so, but I'll leave the comment for now.
-
     )
 ),
 ------------------------ everything works until here -----------------------------
@@ -199,18 +195,15 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
         WHERE rec AND id NOT IN (SELECT id FROM rank1) AND idx NOT IN (SELECT idx FROM toFinish)
     )
     -- collect all the results/copy rows etc
-    SELECT * REPLACE(i+1 AS i) FROM toRecurse WHERE i <15
+    SELECT * REPLACE(i+1 AS i) FROM toRecurse
     UNION ALL
-    SELECT * REPLACE(i+1 AS i) FROM toFinish WHERE i <15
+    SELECT * REPLACE(i+1 AS i) FROM toFinish
     UNION ALL
-    SELECT * REPLACE(i+1 AS i) FROM copyFinished WHERE i <15
+    SELECT * REPLACE(i+1 AS i) FROM copyFinished
     UNION ALL
-    SELECT * REPLACE(i+1 AS i) FROM toCopy WHERE i <15
+    SELECT * REPLACE(i+1 AS i) FROM toCopy
     )
 )
-SELECT *
+SELECT SUM(idx), list_sort(list(idx))
 FROM collector
--- WHERE finished
--- WHERE idx = 2
-ORDER BY idx, i, rec, id
-;
+WHERE finished and res;
