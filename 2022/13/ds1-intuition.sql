@@ -137,7 +137,7 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
             SELECT x+1, c.*
             FROM collector c, last_iteration l, to_parent p
             WHERE c.rec AND c.idx = l.idx AND c.idx = p.idx
-            AND (l.ids[x+1]+1 = c.idx OR list_contains(c.ids, l.ids[x+1]+1))
+            AND (l.ids[x+1]+1 = c.id OR list_contains(c.ids, l.ids[x+1]+1))
             -- go up just to next node, not second next as well
             AND NOT c.idx IN (SELECT idx FROM to_parent WHERE i IS NOT NULL)
             )
@@ -240,6 +240,6 @@ collector(i, idx, parent, id, ids, fst, snd, rec, res, finished, last_iter) AS (
     SELECT * REPLACE(i+1 AS i) FROM to_copy
     )
 )
-SELECT SUM(idx), list_sort(list(idx))
+SELECT SUM(idx) AS result, list_sort(list(idx)) AS indices
 FROM collector
 WHERE finished and res;
