@@ -7,19 +7,20 @@ CREATE MACRO input() AS 'input.txt';
 .read smoke-basin.sql
 
 .timer on
+SET threads = 1;
 
 WITH RECURSIVE
-cave(y, x, height, basin) AS (
-  SELECT h.*, ROW_NUMBER() OVER () AS basin
+cave(x, y, height, basin) AS (
+  SELECT h.x, h.y, h.height, ROW_NUMBER() OVER () AS basin
   FROM   heightmap AS h
 ),
-flows(y, x, height, basin) AS (
+flows(x, y, basin) AS (
   -- start flood fill from low points (Part 1) only
-  SELECT c.*
+  SELECT c.x, c.y, c.basin
   FROM   cave AS c SEMI JOIN lowpoints AS lp
          ON (c.y, c.x) = (lp.y, lp.x)
     UNION
-  SELECT c.y, c.x, c.height, LEAST(f.basin, c.basin) AS basin
+  SELECT c.x, c.y, LEAST(f.basin, c.basin) AS basin
   FROM   flows AS f, cave AS c
   WHERE  (c.x, c.y) IN ((f.x+1, f.y),
                         (f.x-1, f.y),
@@ -27,8 +28,8 @@ flows(y, x, height, basin) AS (
                         (f.x  , f.y-1))
   AND    c.height < 9
 ),
-basins(y, x, basin) AS (
-  SELECT f.y, f.x, MIN(f.basin) AS basin
+basins(x, y, basin) AS (
+  SELECT f.x, f.y, MIN(f.basin) AS basin
   FROM   flows AS f
   GROUP BY f.y, f.x
 )

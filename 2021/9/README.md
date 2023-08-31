@@ -36,7 +36,7 @@ CTE `flows`.
 
 Usage:
 
-Takes about 40s on my Mac Book Pro M2.
+Takes about 30s on my Mac Book Pro M2.
 
 ~~~
 $ duckdb < smoke-basin-part2.sql
@@ -46,6 +46,6 @@ $ duckdb < smoke-basin-part2.sql
 ├─────────┤
 │ 1123524 │
 └─────────┘
-Run Time (s): real 39.621 user 100.740363 sys 16.453172
+Run Time (s): real 30.636 user 23.693674 sys 6.924345
 ~~~
 
